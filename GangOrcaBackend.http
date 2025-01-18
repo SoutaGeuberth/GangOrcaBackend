@@ -1,0 +1,6 @@
+@GangOrcaBackend_HostAddress = http://localhost:5002
+
+GET {{GangOrcaBackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
