@@ -28,6 +28,8 @@ builder.Services.AddControllers();
 //Register the database
 builder.Services.AddMySqlDataSource(builder.Configuration.GetConnectionString("Default")!);
 
+// Getting the connection string into a variable
+var connectionString = builder.Configuration.GetConnectionString("Default");
 
 
 
@@ -44,35 +46,38 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 
-var listaprendas = new List<Dictionary<string, string>>()
-{
-    new Dictionary<string, string>()
-    {
-        { "tittle", "camiseta" },
-        { "cost", "450" },
-        { "src", "https://http2.mlstatic.com/D_NQ_NP_805158-MLM75310632986_032024-O.webp" },
-        { "categoria", "camiseta" }
-    }
-};
 
 app.MapGet("/listaprendas", async (IConfiguration config) =>
 {
-    var connectionString = config.GetConnectionString("Default");
-    using var connection = new MySqlConnection(connectionString);
+    var productos = new List<object>();
 
+    using var connection = new MySqlConnection(connectionString);
     await connection.OpenAsync();
 
-    await using var command = new MySqlCommand("SELECT id,color FROM colors;", connection);
+    await using var command = new MySqlCommand(
+        "SELECT a.name, a.cost, a.src_img, a.size, a.amount, a.description, b.name, c.color" +
+        " FROM clothes a INNER JOIN categories b ON a.id_category = b.id INNER JOIN colors c ON a.id_color = c.id", connection);
     await using var reader = await command.ExecuteReaderAsync();
     while (await reader.ReadAsync())
     {
-        var value = reader.GetValue(1);
-        Console.WriteLine(value);
+        var producto = new
+        {
+            name = reader.GetString(0),
+            cost = reader.GetDecimal(1),
+            srcImg = reader.GetString(2),
+            size = reader.GetString(3),
+            amount = reader.GetInt32(4),
+            description = reader.GetString(5),
+            category = reader.GetString(6),
+            color = reader.GetString(7)
+        };
+        productos.Add(producto);
     }
-
-    return listaprendas;
+    return Results.Ok(productos);
 })
 .WithName("GetListaPrendas");
+
+
 
 app.Run();
 
