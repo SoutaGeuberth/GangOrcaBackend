@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using MySqlConnector;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +69,7 @@ app.MapGet("/listaprendas", async (IConfiguration config) =>
         // Crear un diccionario en lugar de un objeto anónimo
         var producto = new Dictionary<string, object>
         {
+            { "idClothesSizes", new List<int>() },
             { "name", reader.GetString(1) },
             { "cost", reader.GetDecimal(2) },
             { "srcImg", reader.GetString(3) },
@@ -83,16 +85,19 @@ app.MapGet("/listaprendas", async (IConfiguration config) =>
         await connection2.OpenAsync();
 
         await using var command2 = new MySqlCommand(
-            "SELECT size, amount FROM clothes_sizes WHERE id_cloth = @var2;",
+            "SELECT a.id, a.size, a.amount - SUM(IFNULL(rc.amount,0)) FROM clothes_sizes a LEFT JOIN reserve_clothes rc ON a.id = rc.id_clothes_sizes WHERE id_cloth = @var2 GROUP BY a.id, a.size;",
             connection2
         );
+
+
         command2.Parameters.AddWithValue("@var2", reader.GetInt32(0));
 
         await using var reader2 = await command2.ExecuteReaderAsync();
         while (await reader2.ReadAsync())
         {
-            ((List<string>)producto["size"]).Add(reader2.GetString(0));
-            ((List<int>)producto["amount"]).Add(reader2.GetInt32(1));
+            ((List<int>)producto["idClothesSizes"]).Add(reader2.GetInt32(0));
+            ((List<string>)producto["size"]).Add(reader2.GetString(1));
+            ((List<int>)producto["amount"]).Add(reader2.GetInt32(2));
         }
 
         productos.Add(producto);
@@ -132,8 +137,43 @@ app.MapGet("/listacategorias", async (IConfiguration config) =>
 
 });
 
+app.MapPost("/buy", async (HttpContext context, IConfiguration config) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var jsonString = await reader.ReadToEndAsync();
+
+    return Results.Ok(new { message = "Compra procesada", data = jsonString });
+});
+
+
+
+app.MapPost("/reserve", async (HttpContext context, IConfiguration config) =>
+{
+    using var jsonReader = new StreamReader(context.Request.Body);
+    var jsonString = await jsonReader.ReadToEndAsync();
+    BuyRequest requestData = JsonSerializer.Deserialize<BuyRequest>(jsonString); //transforma el json a objeto de c#
+
+    using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    await using var command = new MySqlCommand(
+        "INSERT INTO GangOrcaClothing.reserve_clothes(id_clothes_sizes, amount) VALUES(@var1,1);",
+        connection
+    );
+    // Verificar si la conversión fue exitosa
+    command.Parameters.AddWithValue("@var1", requestData.idClothesSizes);
+
+    await using var reader = await command.ExecuteReaderAsync();
+    return Results.Ok(new { message = "reserva procesada", data = jsonString });
+});
+
+
 
 
 
 app.Run();
 
+public class BuyRequest
+{
+    public int idClothesSizes { get; set; }
+}
