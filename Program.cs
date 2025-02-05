@@ -169,6 +169,37 @@ app.MapPost("/reserve", async (HttpContext context, IConfiguration config) =>
 
 
 
+app.MapGet("/reserve", async (HttpContext context, IConfiguration config) =>
+{
+    var reserves = new List<Dictionary<string, object>>();
+
+    using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    await using var command = new MySqlCommand(
+        "SELECT c.name,c.src_img,SUM(IFNULL(c.cost,0)) AS total_cost, cs.size, SUM(IFNULL(rc.amount,0)) AS total_amount FROM clothes c INNER JOIN clothes_sizes cs ON  c.id = cs.id_cloth INNER JOIN reserve_clothes rc ON cs.id = rc.id_clothes_sizes GROUP BY c.name, c.src_img, cs.`size`;",
+        connection
+    );
+
+    await using var reader = await command.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        var reserve = new Dictionary<string, object>
+        {
+            { "name", reader.GetString(0) },
+            { "srcImg", reader.GetString(1) },
+            { "totalCost", reader.GetFloat(2) },
+            { "size", reader.GetChar(3) },
+            { "totalAmount", reader.GetInt32(4) },
+        };
+        reserves.Add(reserve);
+    }
+
+
+    return Results.Ok(reserves);
+});
+
+
 
 
 app.Run();
