@@ -47,63 +47,12 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 
-
+// Iconfiguration config es un parámetro que se le pasa a la función para poder acceder a la configuración de la aplicación y conectarse a la base de datos
 app.MapGet("/listaprendas", async (IConfiguration config) =>
 {
-    var productos = new List<Dictionary<string, object>>();
 
-    using var connection = new MySqlConnection(connectionString);
-    await connection.OpenAsync();
-
-    await using var command = new MySqlCommand(
-        "SELECT a.id, a.name, a.cost, a.src_img, a.description, b.name, c.color " +
-        "FROM clothes a " +
-        "INNER JOIN categories b ON a.id_category = b.id " +
-        "INNER JOIN colors c ON a.id_color = c.id;",
-        connection
-    );
-
-    await using var reader = await command.ExecuteReaderAsync();
-    while (await reader.ReadAsync())
-    {
-        // Crear un diccionario en lugar de un objeto anónimo
-        var producto = new Dictionary<string, object>
-        {
-            { "idClothesSizes", new List<int>() },
-            { "name", reader.GetString(1) },
-            { "cost", reader.GetDecimal(2) },
-            { "srcImg", reader.GetString(3) },
-            { "size", new List<string>() },  // Se inicializan listas vacías
-            { "amount", new List<int>() },
-            { "description", reader.GetString(4) },
-            { "category", reader.GetString(5) },
-            { "color", reader.GetString(6) }
-        };
-
-        // Ejecutar la segunda consulta para obtener tallas y cantidades
-        using var connection2 = new MySqlConnection(connectionString); // Nueva conexión
-        await connection2.OpenAsync();
-
-        await using var command2 = new MySqlCommand(
-            "SELECT a.id, a.size, a.amount - SUM(IFNULL(rc.amount,0)) FROM clothes_sizes a LEFT JOIN reserve_clothes rc ON a.id = rc.id_clothes_sizes WHERE id_cloth = @var2 GROUP BY a.id, a.size;",
-            connection2
-        );
-
-
-        command2.Parameters.AddWithValue("@var2", reader.GetInt32(0));
-
-        await using var reader2 = await command2.ExecuteReaderAsync();
-        while (await reader2.ReadAsync())
-        {
-            ((List<int>)producto["idClothesSizes"]).Add(reader2.GetInt32(0));
-            ((List<string>)producto["size"]).Add(reader2.GetString(1));
-            ((List<int>)producto["amount"]).Add(reader2.GetInt32(2));
-        }
-
-        productos.Add(producto);
-    }
-
-    return Results.Ok(productos.ToList()); // Asegurar que la lista sea serializable
+    var result = await UpdateClothes.ObtainClothes(connectionString);
+    return Results.Ok(result); // Se Obtienen los datos actualizados de la base de datos
 
 })
 .WithName("GetListaPrendas");
@@ -164,7 +113,8 @@ app.MapPost("/reserve", async (HttpContext context, IConfiguration config) =>
     command.Parameters.AddWithValue("@var1", requestData.idClothesSizes);
 
     await using var reader = await command.ExecuteReaderAsync();
-    return Results.Ok(new { message = "reserva procesada", data = jsonString });
+    var result = await UpdateClothes.ObtainClothes(connectionString);
+    return Results.Ok(result);
 });
 
 
@@ -207,4 +157,68 @@ app.Run();
 public class BuyRequest
 {
     public int idClothesSizes { get; set; }
+}
+
+public class UpdateClothes
+{
+
+    public static async Task<List<Dictionary<string, object>>> ObtainClothes(string connectionString)
+    {
+
+        List<Dictionary<string, object>> productos = new List<Dictionary<string, object>>();
+        using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new MySqlCommand(
+            "SELECT a.id, a.name, a.cost, a.src_img, a.description, b.name, c.color " +
+            "FROM clothes a " +
+            "INNER JOIN categories b ON a.id_category = b.id " +
+            "INNER JOIN colors c ON a.id_color = c.id;",
+            connection
+        );
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            // Crear un diccionario en lugar de un objeto anónimo
+            var producto = new Dictionary<string, object>
+        {
+            { "idClothesSizes", new List<int>() },
+            { "name", reader.GetString(1) },
+            { "cost", reader.GetDecimal(2) },
+            { "srcImg", reader.GetString(3) },
+            { "size", new List<string>() },  // Se inicializan listas vacías
+            { "amount", new List<int>() },
+            { "description", reader.GetString(4) },
+            { "category", reader.GetString(5) },
+            { "color", reader.GetString(6) }
+        };
+
+            // Ejecutar la segunda consulta para obtener tallas y cantidades
+            using var connection2 = new MySqlConnection(connectionString); // Nueva conexión
+            await connection2.OpenAsync();
+
+            await using var command2 = new MySqlCommand(
+                "SELECT a.id, a.size, a.amount - SUM(IFNULL(rc.amount,0)) FROM clothes_sizes a LEFT JOIN reserve_clothes rc ON a.id = rc.id_clothes_sizes WHERE id_cloth = @var2 GROUP BY a.id, a.size;",
+                connection2
+            );
+
+
+            command2.Parameters.AddWithValue("@var2", reader.GetInt32(0));
+
+            await using var reader2 = await command2.ExecuteReaderAsync();
+            while (await reader2.ReadAsync())
+            {
+                ((List<int>)producto["idClothesSizes"]).Add(reader2.GetInt32(0));
+                ((List<string>)producto["size"]).Add(reader2.GetString(1));
+                ((List<int>)producto["amount"]).Add(reader2.GetInt32(2));
+            }
+
+            productos.Add(producto);
+        }
+
+        return productos.ToList();
+
+    }
+
 }
