@@ -127,7 +127,7 @@ app.MapGet("/reserve", async (HttpContext context, IConfiguration config) =>
     await connection.OpenAsync();
 
     await using var command = new MySqlCommand(
-        "SELECT c.name,c.src_img,SUM(IFNULL(c.cost,0)) AS total_cost, cs.size, SUM(IFNULL(rc.amount,0)) AS total_amount FROM clothes c INNER JOIN clothes_sizes cs ON  c.id = cs.id_cloth INNER JOIN reserve_clothes rc ON cs.id = rc.id_clothes_sizes GROUP BY c.name, c.src_img, cs.`size`;",
+        "SELECT cs.id,c.name,c.src_img,SUM(IFNULL(c.cost,0)) AS total_cost, cs.size, SUM(IFNULL(rc.amount,0)) AS total_amount FROM clothes c INNER JOIN clothes_sizes cs ON  c.id = cs.id_cloth INNER JOIN reserve_clothes rc ON cs.id = rc.id_clothes_sizes GROUP BY cs.id,c.name, c.src_img, cs.`size`;",
         connection
     );
 
@@ -136,11 +136,12 @@ app.MapGet("/reserve", async (HttpContext context, IConfiguration config) =>
     {
         var reserve = new Dictionary<string, object>
         {
-            { "name", reader.GetString(0) },
-            { "srcImg", reader.GetString(1) },
-            { "totalCost", reader.GetFloat(2) },
-            { "size", reader.GetChar(3) },
-            { "totalAmount", reader.GetInt32(4) },
+            { "idClothesSizes", reader.GetInt32(0) },
+            { "name", reader.GetString(1) },
+            { "srcImg", reader.GetString(2) },
+            { "totalCost", reader.GetDecimal(3) },
+            { "size", reader.GetString(4) },
+            { "totalAmount", reader.GetInt32(5) }
         };
         reserves.Add(reserve);
     }
@@ -149,10 +150,43 @@ app.MapGet("/reserve", async (HttpContext context, IConfiguration config) =>
     return Results.Ok(reserves);
 });
 
+app.MapPut("/update-reserve", async (HttpContext context, IConfiguration config) =>
+{
+    using var jsonReader = new StreamReader(context.Request.Body);
+    var jsonString = await jsonReader.ReadToEndAsync();
+    List<ReserveUpdateRequest> updatedReserves = JsonSerializer.Deserialize<List<ReserveUpdateRequest>>(jsonString);
+
+    using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    foreach (var reserve in updatedReserves)
+    {
+        await using var command = new MySqlCommand(
+            "UPDATE reserve_clothes SET amount = @amount WHERE id_clothes_sizes = @idClothesSizes;",
+            connection
+        );
+        command.Parameters.AddWithValue("@amount", reserve.TotalAmount);
+        command.Parameters.AddWithValue("@idClothesSizes", reserve.IdClothesSizes);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    return Results.Ok(new { message = "Reserva actualizada correctamente" });
+});
+
+
+
+
 
 
 
 app.Run();
+
+public class ReserveUpdateRequest
+{
+    public int IdClothesSizes { get; set; }
+    public int TotalAmount { get; set; }
+}
 
 public class BuyRequest
 {
